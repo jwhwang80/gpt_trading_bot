@@ -44,7 +44,7 @@ class TradingPipeline:
             import sys
 
             # 모듈 경로 설정
-            module_path = os.path.join(os.path.dirname(__file__), 'download_historical_chart.py')
+            module_path = os.path.join(os.path.dirname(__file__), 'collectors/download_historical_chart.py')
 
             # 모듈 스펙 생성 및 로드
             spec = importlib.util.spec_from_file_location("download_historical_chart", module_path)
