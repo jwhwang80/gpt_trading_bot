@@ -12,77 +12,90 @@ class PromptGenerator:
             historical_trades: Optional[List[Dict[str, Any]]] = None
     ) -> str:
         """
-        시장 데이터와 과거 거래를 기반으로 GPT 전략 프롬프트 생성
+        Generate a GPT prompt for trading strategy based on market data and historical trades
 
         Args:
-            market_data (Dict): 현재 시장 데이터
-            historical_trades (Optional[List]): 과거 거래 내역
+            market_data (Dict): Current market data
+            historical_trades (Optional[List]): Historical trade records
 
         Returns:
-            str: GPT에 전달할 프롬프트 문자열
+            str: Prompt string to send to GPT
         """
-        # 기본 시장 데이터 포맷팅
+        # Get primary timeframe info (default: 4H)
+        primary_timeframe = market_data.get('primary_timeframe', '4H')
+
         prompt = f"""
-현재 시장 상황을 분석하고 {market_data.get('timeframe', '4H')} 시간프레임의 BTCUSDT에 대한 트레이딩 전략을 제안해주세요.
+    Please analyze the current market conditions and suggest a trading strategy for BTCUSDT.
 
-시장 데이터:
-- 현재 가격: {market_data.get('price', 0)}
-- 타임스탬프: {market_data.get('timestamp', '정보 없음')}
-- 시간프레임: {market_data.get('timeframe', '4H')}
-"""
+    Basic Market Information:
+    - Current Price: {market_data.get('price', 0)}
+    - Timestamp: {market_data.get('timestamp', 'No information')}
+    - Primary Timeframe: {primary_timeframe}
+    """
 
-        # 지표 데이터 추가
-        indicators = market_data.get('indicators', {})
-        if indicators:
-            prompt += "\n기술적 지표:\n"
-            # 주요 지표만 선택적으로 추가
-            for indicator_name, indicator_data in indicators.items():
-                # 지표 이름과 값만 간략하게 표시
-                if isinstance(indicator_data, dict) and 'signal' in indicator_data:
-                    prompt += f"- {indicator_name}: 신호 = {indicator_data['signal']}"
-                    if 'value' in indicator_data:
-                        prompt += f", 값 = {indicator_data['value']}"
-                    prompt += "\n"
+        # Add indicators data for multiple timeframes
+        timeframes_data = market_data.get('timeframes', {})
 
-        # 과거 거래 내역 정보 추가
+        # Add data for each timeframe
+        for timeframe, tf_data in timeframes_data.items():
+            prompt += f"\n{timeframe} Timeframe Technical Indicators:\n"
+
+            # Add indicator data if available
+            indicators = tf_data.get('indicators', {})
+            if indicators:
+                for indicator_name, indicator_data in indicators.items():
+                    # Display indicator name and value in a concise format
+                    if isinstance(indicator_data, dict) and 'signal' in indicator_data:
+                        prompt += f"- {indicator_name}: Signal = {indicator_data['signal']}"
+                        if 'value' in indicator_data:
+                            prompt += f", Value = {indicator_data['value']}"
+                        prompt += "\n"
+            else:
+                prompt += "- No indicator data available\n"
+
+        # Add historical trade information
         if historical_trades and len(historical_trades) > 0:
-            prompt += "\n최근 거래 내역:\n"
-            for i, trade in enumerate(historical_trades[-3:]):  # 최근 3개 거래만 표시
+            prompt += "\nRecent Trade History:\n"
+            for i, trade in enumerate(historical_trades[-3:]):  # Show only the last 3 trades
                 action = trade.get('action', 'UNKNOWN')
                 entry_price = trade.get('entry_price', 0)
-                result = trade.get('result', '정보 없음')
+                result = trade.get('result', 'No information')
 
-                prompt += f"#{i + 1}: {action} @ {entry_price:.2f}, 결과: {result}\n"
+                prompt += f"#{i + 1}: {action} @ {entry_price:.2f}, Result: {result}\n"
 
-        # 응답 요구사항 추가
+        # Add response requirements
         prompt += """
-요구사항:
-1. JSON 형식으로 응답 (예: {"action": "BUY/SELL/HOLD", "confidence": 0-100, "reasoning": "설명", "stop_loss": 가격, "take_profit": 가격})
-2. action은 반드시 BUY, SELL, HOLD 중 하나여야 합니다.
-3. confidence는 0-100 사이의 숫자로 표현하세요.
-4. 전략의 근거를 reasoning 필드에 명확히 제시하세요.
-5. 진입을 제안하는 경우 (BUY 또는 SELL) 반드시 stop_loss와 take_profit 가격을 제안하세요.
-6. 포지션 사이즈는 confidence에 비례하며, 최대 5%를 초과하지 않습니다.
-7. 현재 시장 상황, 기술적 지표, 추세를 종합적으로 고려하세요.
+    Multi-Timeframe Analysis Request:
+    - Please consider both 4H and daily (1D) data in your analysis.
+    - Check if short-term (4H) and long-term (1D) trends align, and explain what strategy is appropriate if the signals from the two timeframes conflict.
 
-JSON 형식으로만 답변해주세요.
-"""
+    Requirements:
+    1. Respond in JSON format (e.g., {"action": "BUY/SELL/HOLD", "confidence": 0-100, "reasoning": "explanation", "stop_loss": price, "take_profit": price})
+    2. The action must be one of: BUY, SELL, or HOLD.
+    3. Confidence should be expressed as a number between 0-100.
+    4. Clearly present the rationale for your strategy in the reasoning field.
+    5. If you suggest entry (BUY or SELL), you must propose stop_loss and take_profit prices.
+    6. Position size is proportional to confidence and will not exceed 5%.
+    7. Consider the current market conditions, technical indicators from multiple timeframes, and trends comprehensively.
+
+    Please respond in JSON format only.
+    """
 
         return prompt
 
     @staticmethod
     def parse_gpt_response(gpt_response: str) -> Dict[str, Any]:
         """
-        GPT 응답을 JSON으로 파싱합니다.
+        Parses the GPT response into JSON.
 
         Args:
-            gpt_response (str): GPT의 응답 문자열
+            gpt_response (str): GPT's response string
 
         Returns:
-            Dict: 파싱된 전략 JSON
+            Dict: Parsed strategy JSON
         """
         try:
-            # JSON 부분만 추출하기 위한 간단한 파싱 로직
+            # Simple parsing logic to extract just the JSON part
             if '{' in gpt_response and '}' in gpt_response:
                 start = gpt_response.find('{')
                 end = gpt_response.rfind('}') + 1
@@ -91,29 +104,29 @@ JSON 형식으로만 답변해주세요.
             else:
                 parsed_data = json.loads(gpt_response)
 
-            # 필수 필드 검증
+            # Verify required fields
             if 'action' not in parsed_data:
                 parsed_data['action'] = 'HOLD'
-                parsed_data['reasoning'] = parsed_data.get('reasoning', '') + " (기본 HOLD 액션 적용)"
+                parsed_data['reasoning'] = parsed_data.get('reasoning', '') + " (Default HOLD action applied)"
 
             if 'confidence' not in parsed_data:
                 parsed_data['confidence'] = 0
 
-            # action 정규화
+            # Normalize action
             if parsed_data['action'].upper() not in ['BUY', 'SELL', 'HOLD']:
                 parsed_data['action'] = 'HOLD'
-                parsed_data['reasoning'] = parsed_data.get('reasoning', '') + " (유효하지 않은 액션, HOLD 적용)"
+                parsed_data['reasoning'] = parsed_data.get('reasoning', '') + " (Invalid action, HOLD applied)"
 
             parsed_data['action'] = parsed_data['action'].upper()
 
             return parsed_data
 
         except json.JSONDecodeError as e:
-            print(f"JSON 파싱 오류: {e}. 원본 응답: {gpt_response[:100]}...")
+            print(f"JSON parsing error: {e}. Original response: {gpt_response[:100]}...")
             return {
                 "action": "HOLD",
                 "confidence": 0,
-                "reasoning": "JSON 파싱 실패"
+                "reasoning": "JSON parsing failed"
             }
 
     @staticmethod

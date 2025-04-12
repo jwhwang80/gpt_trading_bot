@@ -24,8 +24,7 @@ class GPTInterface:
     def call_gpt_with_prompt(
             self,
             prompt: str,
-            model: str = "gpt-3.5-turbo",
-            max_tokens: int = 500
+            model: str = "gpt-4o"  # gpt-3.5-turbo에서 o3-mini로 변경
     ) -> str:
         """
         주어진 프롬프트로 GPT API 호출
@@ -45,8 +44,6 @@ class GPTInterface:
                     {"role": "system", "content": "You are a helpful trading strategy assistant."},
                     {"role": "user", "content": prompt}
                 ],
-                max_tokens=max_tokens,
-                temperature=0.7
             )
 
             return response.choices[0].message.content.strip()

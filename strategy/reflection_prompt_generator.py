@@ -12,85 +12,85 @@ class ReflectionPromptGenerator:
             profit_percentage: float = 0
     ) -> str:
         """
-        GPT에게 전략에 대한 복기를 요청하는 프롬프트를 생성합니다.
+        Generate a prompt requesting GPT to reflect on the trading strategy.
 
         Args:
-            gpt_strategy (Dict): 원래 GPT가 제안한 전략
-            entry_price (float): 진입 가격
-            exit_price (float): 청산 가격
-            profit_percentage (float): 수익률
+            gpt_strategy (Dict): The original strategy suggested by GPT
+            entry_price (float): Entry price
+            exit_price (float): Exit price
+            profit_percentage (float): Profit percentage
 
         Returns:
-            str: 복기를 위한 프롬프트
+            str: Reflection prompt
         """
-        # 간소화된 전략 정보 준비 (너무 복잡하지 않게)
+        # Prepare simplified strategy information (not too complex)
         strategy_info = {
             "action": gpt_strategy.get("action", "UNKNOWN"),
             "confidence": gpt_strategy.get("confidence", 0),
-            "reasoning": gpt_strategy.get("reasoning", "설명 없음"),
+            "reasoning": gpt_strategy.get("reasoning", "No explanation"),
             "stop_loss": gpt_strategy.get("stop_loss", 0),
             "take_profit": gpt_strategy.get("take_profit", 0),
         }
 
         prompt_template = f"""
-최근 실행한 트레이딩 전략에 대한 심층 복기를 수행해주세요. 이 복기는 향후 전략 개선에 중요합니다.
+    Please conduct an in-depth reflection on the recently executed trading strategy. This reflection is important for future strategy improvements.
 
-원래 전략:
-{json.dumps(strategy_info, indent=2, ensure_ascii=False)}
+    Original Strategy:
+    {json.dumps(strategy_info, indent=2, ensure_ascii=False)}
 
-거래 결과:
-- 진입 가격: {entry_price}
-- 청산 가격: {exit_price}
-- 수익률: {profit_percentage:.2f}%
-- 거래 타입: {"롱" if gpt_strategy.get("action") == "BUY" else "숏" if gpt_strategy.get("action") == "SELL" else "홀딩"}
+    Trade Results:
+    - Entry Price: {entry_price}
+    - Exit Price: {exit_price}
+    - Profit/Loss: {profit_percentage:.2f}%
+    - Trade Type: {"Long" if gpt_strategy.get("action") == "BUY" else "Short" if gpt_strategy.get("action") == "SELL" else "Hold"}
 
-분석 관점:
-1. 전략의 성공/실패 요인 상세 분석
-2. 결과와 초기 전략 사이의 차이점 식별
-3. 향후 유사한 시장 상황에서 개선할 점 제안
-4. 리스크 관리 측면에서 개선점 제안
-5. JSON 형식으로 응답 (아래 구조 준수)
+    Analysis Perspectives:
+    1. Detailed analysis of factors contributing to the strategy's success/failure
+    2. Identification of differences between the outcome and the initial strategy
+    3. Suggestions for improvements in similar market conditions in the future
+    4. Recommendations for improvements in risk management
+    5. Respond in JSON format (follow the structure below)
 
-응답 JSON 구조:
-{{
-    "overall_assessment": "성공/부분성공/실패",
-    "key_insights": ["인사이트 1", "인사이트 2", "인사이트 3"],
-    "improvement_recommendations": ["추천 1", "추천 2", "추천 3"],
-    "confidence_in_original_strategy": 0-100,
-    "risk_management_score": 0-100,
-    "future_considerations": "향후 이러한 전략 실행시 고려할 점"
-}}
+    Response JSON Structure:
+    {{
+        "overall_assessment": "Success/Partial Success/Failure",
+        "key_insights": ["Insight 1", "Insight 2", "Insight 3"],
+        "improvement_recommendations": ["Recommendation 1", "Recommendation 2", "Recommendation 3"],
+        "confidence_in_original_strategy": 0-100,
+        "risk_management_score": 0-100,
+        "future_considerations": "Points to consider when executing similar strategies in the future"
+    }}
 
-반드시 JSON 형식으로 응답해 주세요.
-"""
+    Please respond in JSON format only.
+    """
 
         return prompt_template
 
     @staticmethod
     def parse_reflection_response(reflection_response: str) -> Dict[str, Any]:
         """
-        GPT의 복기 응답을 파싱합니다.
+        Parses GPT's reflection response.
 
         Args:
-            reflection_response (str): GPT의 복기 응답 문자열
+            reflection_response (str): GPT's reflection response string
 
         Returns:
-            Dict: 파싱된 복기 결과
+            Dict: Parsed reflection result
         """
         try:
-            # 응답이 잘린 경우 처리 (추가)
+            # Handle truncated responses
             if '{' in reflection_response and '}' not in reflection_response:
-                print("응답이 잘렸습니다. 부분 응답을 복구합니다.")
-                # 부분 응답에 대한 기본 구조 반환
+                print("Response was truncated. Recovering partial response.")
+                # Return a default structure for partial responses
                 return {
-                    "overall_assessment": "부분 응답",
-                    "key_insights": ["응답이 잘려서 완전히 파싱할 수 없습니다."],
-                    "improvement_recommendations": ["전체 응답을 받기 위해 다시 시도하세요."],
+                    "overall_assessment": "Partial Response",
+                    "key_insights": ["Response was truncated and could not be fully parsed."],
+                    "improvement_recommendations": ["Try again to get a complete response."],
                     "confidence_in_original_strategy": 50,
                     "reflection_date": datetime.now().isoformat()
                 }
 
-            # JSON 부분만 추출하기 위한 간단한 파싱 로직
+            # Extract just the JSON part
             if '{' in reflection_response and '}' in reflection_response:
                 start = reflection_response.find('{')
                 end = reflection_response.rfind('}') + 1
@@ -99,7 +99,7 @@ class ReflectionPromptGenerator:
             else:
                 parsed_data = json.loads(reflection_response)
 
-            # 필수 필드 확인
+            # Check required fields
             required_fields = [
                 "overall_assessment",
                 "key_insights",
@@ -110,22 +110,22 @@ class ReflectionPromptGenerator:
             for field in required_fields:
                 if field not in parsed_data:
                     if field == "overall_assessment":
-                        parsed_data[field] = "평가 실패"
+                        parsed_data[field] = "Assessment Failed"
                     elif field in ["key_insights", "improvement_recommendations"]:
-                        parsed_data[field] = ["파싱 오류"]
+                        parsed_data[field] = ["Parsing Error"]
                     else:
                         parsed_data[field] = 0
 
-            # 날짜 추가
+            # Add date
             parsed_data["reflection_date"] = datetime.now().isoformat()
 
             return parsed_data
 
         except json.JSONDecodeError as e:
-            print(f"복기 응답 JSON 파싱 실패: {e}. 원본 응답: {reflection_response[:100]}...")
+            print(f"Reflection response JSON parsing failed: {e}. Original response: {reflection_response[:100]}...")
             return {
-                "overall_assessment": "분석 실패",
-                "key_insights": ["JSON 파싱 오류"],
+                "overall_assessment": "Analysis Failed",
+                "key_insights": ["JSON Parsing Error"],
                 "improvement_recommendations": [],
                 "confidence_in_original_strategy": 0,
                 "reflection_date": datetime.now().isoformat()

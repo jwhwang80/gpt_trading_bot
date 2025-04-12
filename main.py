@@ -1,4 +1,4 @@
-from typing import Dict, Any
+from typing import Dict, Any, Tuple
 import os
 import asyncio
 import json
@@ -78,38 +78,46 @@ class TradingPipeline:
             results = self.indicator_calculator.calculate_all_timeframes()
             print("기술적 지표 계산 완료")
 
-            print(f"시간프레임 데이터 추출: {self.interval}")
-            timeframe_data = results[self.interval]['interpretation']
-            print("시간프레임 데이터 추출 완료")
+            # 여러 시간프레임 데이터 통합
+            timeframes_data = {}
+            current_price = 0
+            timestamp = ""
 
-            print("현재 가격 추출...")
-            close_price = timeframe_data.get('close_price')
-            print(f"추출된 close_price 타입: {type(close_price)}, 값: {close_price}")
+            # 4시간 데이터 추출
+            if '4H' in results:
+                timeframe_data_4h = results['4H']['interpretation']
+                timeframes_data['4H'] = {
+                    'indicators': self._sanitize_data(timeframe_data_4h.get('indicators', {}))
+                }
+                current_price = timeframe_data_4h.get('close_price', 0)
+                timestamp = str(timeframe_data_4h.get('timestamp', ''))
+
+            # 일간 데이터 추출
+            if '1D' in results:
+                timeframe_data_1d = results['1D']['interpretation']
+                timeframes_data['1D'] = {
+                    'indicators': self._sanitize_data(timeframe_data_1d.get('indicators', {}))
+                }
+                # 현재 가격이 없는 경우에만 일간 데이터에서 가져옴
+                if not current_price:
+                    current_price = timeframe_data_1d.get('close_price', 0)
+                if not timestamp:
+                    timestamp = str(timeframe_data_1d.get('timestamp', ''))
 
             # 안전하게 float로 변환
             try:
-                current_price = float(close_price)
-                print(f"변환된 current_price: {current_price}")
+                current_price = float(current_price)
+                print(f"추출된 current_price: {current_price}")
             except (TypeError, ValueError) as e:
                 print(f"가격 변환 오류: {e}")
                 current_price = 0.0
 
-            # 지표 데이터를 안전하게 처리
-            indicators = {}
-            if 'indicators' in timeframe_data and isinstance(timeframe_data['indicators'], dict):
-                indicators = self._sanitize_data(timeframe_data['indicators'])
-
-            # 타임스탬프 안전하게 추출
-            timestamp = timeframe_data.get('timestamp')
-            if timestamp is not None:
-                timestamp = str(timestamp)
-
-            # 통합 데이터 반환 (간소화된 버전)
+            # 통합 데이터 반환
             return {
                 "price": current_price,
-                "indicators": indicators,
                 "timestamp": timestamp,
-                "timeframe": self.interval
+                "primary_timeframe": self.interval,  # 주 시간프레임 (기본 4H)
+                "timeframes": timeframes_data
             }
 
         except Exception as e:
@@ -118,19 +126,19 @@ class TradingPipeline:
             # 기본 데이터 반환
             return {
                 "price": 0.0,
-                "indicators": {},
+                "timeframes": {},
                 "error": str(e)
             }
 
-    def request_trading_strategy(self, market_data: Dict[str, Any]) -> Dict[str, Any]:
+    def generate_trading_prompt(self, market_data: Dict[str, Any]) -> str:
         """
-        GPT에 트레이딩 전략 요청
+        트레이딩 전략을 위한 GPT 프롬프트 생성
 
         Args:
             market_data (Dict[str, Any]): 시장 데이터
 
         Returns:
-            Dict[str, Any]: GPT의 전략 응답
+            str: 생성된 프롬프트
         """
         try:
             # 과거 거래 내역 로드
@@ -142,18 +150,63 @@ class TradingPipeline:
                 historical_trades
             )
 
+            return prompt
+        except Exception as e:
+            print(f"트레이딩 프롬프트 생성 중 오류 발생: {e}")
+            # 단순화된 기본 프롬프트 반환
+            return f"BTCUSDT에 대한 트레이딩 전략을 'action', 'confidence', 'reasoning', 'stop_loss', 'take_profit' 필드가 포함된 JSON 형식으로 제안해주세요. 현재 가격: {market_data.get('price', 0)}"
+
+    def process_gpt_response(self, gpt_response: str) -> Dict[str, Any]:
+        """
+        GPT의 응답을 처리하고 파싱합니다.
+
+        Args:
+            gpt_response (str): GPT의 원본 응답
+
+        Returns:
+            Dict[str, Any]: 파싱된 전략
+        """
+        try:
+            # 응답 파싱
+            return PromptGenerator.parse_gpt_response(gpt_response)
+        except Exception as e:
+            print(f"GPT 응답 처리 중 오류 발생: {e}")
+            return {
+                "action": "HOLD",
+                "confidence": 0,
+                "reasoning": f"응답 처리 중 오류: {str(e)}"
+            }
+
+    def request_trading_strategy(self, market_data: Dict[str, Any]) -> Tuple[str, Dict[str, Any]]:
+        """
+        GPT에 트레이딩 전략 요청
+
+        Args:
+            market_data (Dict[str, Any]): 시장 데이터
+
+        Returns:
+            Tuple[str, Dict[str, Any]]: (프롬프트, GPT의 파싱된 전략 응답)
+        """
+        try:
+            # 프롬프트 생성
+            prompt = self.generate_trading_prompt(market_data)
+
             # GPT 호출
             gpt_response = self.gpt_interface.call_gpt_with_prompt(prompt)
 
             # 응답 파싱
-            return PromptGenerator.parse_gpt_response(gpt_response)
+            strategy = self.process_gpt_response(gpt_response)
+
+            # 프롬프트와 파싱된 전략 반환
+            return prompt, strategy
         except Exception as e:
             print(f"트레이딩 전략 요청 중 오류 발생: {e}")
-            return {
+            default_strategy = {
                 "action": "HOLD",
                 "confidence": 0,
                 "reasoning": f"전략 요청 중 오류: {str(e)}"
             }
+            return "오류로 인한 기본 프롬프트", default_strategy
 
     def execute_trade(self, strategy: Dict[str, Any], current_price: float) -> Dict[str, Any]:
         """
@@ -244,7 +297,7 @@ class TradingPipeline:
 
         try:
             # 1. 역사적 데이터 업데이트
-            if True:
+            if False:
                 try:
                     await self.update_historical_data()
                 except Exception as e:
@@ -257,8 +310,8 @@ class TradingPipeline:
                 print(f"유효한 가격 데이터를 수집하지 못했습니다. 가격: {price} 파이프라인 중단.")
                 return
 
-            # 3. GPT에 전략 요청
-            strategy = self.request_trading_strategy(market_data)
+            # 3. GPT에 전략 요청 (프롬프트와 전략 응답 받기)
+            prompt, strategy = self.request_trading_strategy(market_data)
 
             # 4. 전략 실행
             trade_result = self.execute_trade(strategy, float(price))
@@ -266,9 +319,7 @@ class TradingPipeline:
             # 5. 복기 요청
             reflection = self.request_reflection(strategy, trade_result)
 
-            # 6. 로그 저장
-            prompt = PromptGenerator.generate_strategy_prompt(market_data)
-
+            # 6. 로그 저장 (프롬프트 포함)
             # 모든 데이터를 JSON으로 직렬화 가능한 상태로 변환
             market_data_clean = self._sanitize_data(market_data)
             strategy_clean = self._sanitize_data(strategy)
@@ -288,7 +339,7 @@ class TradingPipeline:
 
             LogSaver.save_log_with_result(
                 market_data_clean,
-                prompt,
+                prompt,  # 프롬프트 전달
                 strategy_clean,
                 trade_result_clean,
                 reflection_clean
@@ -302,8 +353,9 @@ class TradingPipeline:
 
             # 오류가 발생해도 로그 저장 시도
             try:
-                if market_data and strategy:
-                    prompt = prompt or PromptGenerator.generate_strategy_prompt(market_data)
+                if market_data:
+                    # 프롬프트 또는 기본 메시지 사용
+                    save_prompt = prompt or "프롬프트 생성 중 오류 발생"
 
                     # 간소화된 데이터로 로그 저장
                     simplified_data = {
@@ -316,8 +368,8 @@ class TradingPipeline:
 
                     LogSaver.save_log_with_result(
                         simplified_data,
-                        prompt,
-                        self._sanitize_data(strategy),
+                        save_prompt,
+                        self._sanitize_data(strategy) if strategy else {"error": "전략 생성 실패"},
                         simplified_result,
                         simplified_reflection
                     )
