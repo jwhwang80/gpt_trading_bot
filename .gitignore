@@ -1,0 +1,5 @@
+#python virtual environment
+venv/
+output/
+logs/
+.idea/

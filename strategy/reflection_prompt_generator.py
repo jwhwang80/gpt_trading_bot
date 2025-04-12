@@ -9,8 +9,7 @@ class ReflectionPromptGenerator:
             gpt_strategy: Dict[str, Any],
             entry_price: float = 0,
             exit_price: float = 0,
-            profit_percentage: float = 0,
-            market_conditions: Dict[str, Any] = None
+            profit_percentage: float = 0
     ) -> str:
         """
         GPT에게 전략에 대한 복기를 요청하는 프롬프트를 생성합니다.
@@ -20,7 +19,6 @@ class ReflectionPromptGenerator:
             entry_price (float): 진입 가격
             exit_price (float): 청산 가격
             profit_percentage (float): 수익률
-            market_conditions (Dict): 거래 시점의 시장 상황
 
         Returns:
             str: 복기를 위한 프롬프트
@@ -34,24 +32,11 @@ class ReflectionPromptGenerator:
             "take_profit": gpt_strategy.get("take_profit", 0),
         }
 
-        # 시장 상황 정보 준비
-        market_info = ""
-        if market_conditions:
-            market_info = f"""
-시장 상황:
-- 가격: {market_conditions.get('price', 0)}
-- RSI: {market_conditions.get('rsi', 0)}
-- 공포-탐욕 지수: {market_conditions.get('fear_greed_index', 0)}
-- 시장 컨텍스트: {market_conditions.get('market_context', '정보 없음')}
-"""
-
         prompt_template = f"""
 최근 실행한 트레이딩 전략에 대한 심층 복기를 수행해주세요. 이 복기는 향후 전략 개선에 중요합니다.
 
 원래 전략:
 {json.dumps(strategy_info, indent=2, ensure_ascii=False)}
-
-{market_info}
 
 거래 결과:
 - 진입 가격: {entry_price}
@@ -63,9 +48,8 @@ class ReflectionPromptGenerator:
 1. 전략의 성공/실패 요인 상세 분석
 2. 결과와 초기 전략 사이의 차이점 식별
 3. 향후 유사한 시장 상황에서 개선할 점 제안
-4. 시장 지표의 해석이 정확했는지 평가
-5. 리스크 관리 측면에서 개선점 제안
-6. JSON 형식으로 응답 (아래 구조 준수)
+4. 리스크 관리 측면에서 개선점 제안
+5. JSON 형식으로 응답 (아래 구조 준수)
 
 응답 JSON 구조:
 {{
@@ -73,7 +57,6 @@ class ReflectionPromptGenerator:
     "key_insights": ["인사이트 1", "인사이트 2", "인사이트 3"],
     "improvement_recommendations": ["추천 1", "추천 2", "추천 3"],
     "confidence_in_original_strategy": 0-100,
-    "market_analysis_accuracy": 0-100,
     "risk_management_score": 0-100,
     "future_considerations": "향후 이러한 전략 실행시 고려할 점"
 }}
@@ -95,6 +78,18 @@ class ReflectionPromptGenerator:
             Dict: 파싱된 복기 결과
         """
         try:
+            # 응답이 잘린 경우 처리 (추가)
+            if '{' in reflection_response and '}' not in reflection_response:
+                print("응답이 잘렸습니다. 부분 응답을 복구합니다.")
+                # 부분 응답에 대한 기본 구조 반환
+                return {
+                    "overall_assessment": "부분 응답",
+                    "key_insights": ["응답이 잘려서 완전히 파싱할 수 없습니다."],
+                    "improvement_recommendations": ["전체 응답을 받기 위해 다시 시도하세요."],
+                    "confidence_in_original_strategy": 50,
+                    "reflection_date": datetime.now().isoformat()
+                }
+
             # JSON 부분만 추출하기 위한 간단한 파싱 로직
             if '{' in reflection_response and '}' in reflection_response:
                 start = reflection_response.find('{')
