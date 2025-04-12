@@ -244,7 +244,7 @@ class TradingPipeline:
 
         try:
             # 1. 역사적 데이터 업데이트
-            if False:
+            if True:
                 try:
                     await self.update_historical_data()
                 except Exception as e:
