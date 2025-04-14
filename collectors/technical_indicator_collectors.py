@@ -3,8 +3,10 @@ import numpy as np
 import os
 from datetime import datetime
 from typing import Dict, Any, Tuple, List, Optional
+
+import collectors.base_indicator
 # Import indicator classes from relative path
-from collectors import indicator_classes
+from collectors import technical_indicators
 
 
 class TechnicalIndicatorCalculator:
@@ -47,11 +49,11 @@ class TechnicalIndicatorCalculator:
 
         # Find all classes that inherit from BaseIndicator
         indicator_classes_list = []
-        for name, obj in inspect.getmembers(indicator_classes):
+        for name, obj in inspect.getmembers(technical_indicators):
             # Class that inherits from BaseIndicator but is not BaseIndicator itself
             if (inspect.isclass(obj) and
-                    issubclass(obj, indicator_classes.BaseIndicator) and
-                    obj is not indicator_classes.BaseIndicator):
+                    issubclass(obj, collectors.base_indicator.BaseIndicator) and
+                    obj is not collectors.base_indicator.BaseIndicator):
                 indicator_classes_list.append(obj)
 
         print(f"Found {len(indicator_classes_list)} indicator classes.")

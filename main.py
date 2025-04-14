@@ -7,7 +7,7 @@ import pandas as pd
 from datetime import datetime
 import traceback
 
-from collectors.technical_indicator_calculator import TechnicalIndicatorCalculator
+from collectors.technical_indicator_collectors import TechnicalIndicatorCalculator
 from strategy.prompt_generator import PromptGenerator
 from strategy.gpt_interface import GPTInterface
 from execution.excel_tracker import ExcelTracker
