@@ -46,13 +46,15 @@ class OnchainIndicatorCalculator:
         # Import all classes from onchain_indicators module
         import inspect
 
-        # Find all classes that inherit from BaseIndicator
+        # Find all classes that inherit from OnchainIndicatorBase
         indicator_classes_list = []
         for name, obj in inspect.getmembers(onchain_indicators):
-            # Class that inherits from BaseIndicator but is not BaseIndicator itself
+            # Class that inherits from OnchainIndicatorBase or BaseIndicator
             if (inspect.isclass(obj) and
-                    issubclass(obj, BaseIndicator) and
-                    obj is not BaseIndicator):
+                (issubclass(obj, BaseIndicator) or
+                 (hasattr(obj, '__module__') and obj.__module__ == 'collectors.onchain_indicators')) and
+                obj is not BaseIndicator and
+                obj is not onchain_indicators.OnchainIndicatorBase):
                 indicator_classes_list.append(obj)
 
         print(f"Found {len(indicator_classes_list)} onchain indicator classes.")
