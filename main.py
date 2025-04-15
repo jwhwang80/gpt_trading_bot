@@ -8,6 +8,7 @@ from datetime import datetime
 import traceback
 
 from collectors.technical_indicator_collectors import TechnicalIndicatorCalculator
+from collectors.onchain_indicator_collectors import OnchainIndicatorCalculator
 from strategy.prompt_generator import PromptGenerator
 from strategy.gpt_interface import GPTInterface
 from execution.excel_tracker import ExcelTracker
@@ -28,6 +29,7 @@ class TradingPipeline:
         self.symbol = symbol
         self.interval = interval
         self.indicator_calculator = TechnicalIndicatorCalculator(f"{symbol}_1m_3000day_data.csv", symbol)
+        self.onchain_calculator = OnchainIndicatorCalculator()  # 온체인 지표 계산기 추가
         self.gpt_interface = GPTInterface()
         self.excel_tracker = ExcelTracker()
         self.position_manager = PositionManager(self.excel_tracker)
@@ -130,12 +132,40 @@ class TradingPipeline:
                 "error": str(e)
             }
 
-    def generate_trading_prompt(self, market_data: Dict[str, Any]) -> str:
+    def collect_onchain_data(self) -> Dict[str, Any]:
+        """
+        온체인 지표 계산기를 사용하여 온체인 데이터 수집
+
+        Returns:
+            Dict[str, Any]: 수집된 온체인 데이터
+        """
+        try:
+            print("온체인 지표 계산 시작...")
+            _, results = self.onchain_calculator.calculate_onchain_indicators()
+            print("온체인 지표 계산 완료")
+
+            # 결과 데이터 정리
+            cleaned_results = self._sanitize_data(results)
+
+            return cleaned_results
+
+        except Exception as e:
+            print(f"온체인 데이터 수집 중 오류 발생: {e}")
+            traceback.print_exc()  # 상세 오류 정보 출력
+            return {
+                "indicators": {},
+                "error": str(e)
+            }
+
+    def generate_trading_prompt(self,
+                                market_data: Dict[str, Any],
+                                onchain_data: Dict[str, Any] = None) -> str:
         """
         트레이딩 전략을 위한 GPT 프롬프트 생성
 
         Args:
             market_data (Dict[str, Any]): 시장 데이터
+            onchain_data (Dict[str, Any], optional): 온체인 데이터
 
         Returns:
             str: 생성된 프롬프트
@@ -144,10 +174,11 @@ class TradingPipeline:
             # 과거 거래 내역 로드
             historical_trades = PromptGenerator.load_historical_trades(max_trades=3)
 
-            # 전략 프롬프트 생성
+            # 전략 프롬프트 생성 (온체인 데이터 추가)
             prompt = PromptGenerator.generate_strategy_prompt(
                 market_data,
-                historical_trades
+                historical_trades,
+                onchain_data  # 온체인 데이터 전달
             )
 
             return prompt
@@ -177,19 +208,21 @@ class TradingPipeline:
                 "reasoning": f"응답 처리 중 오류: {str(e)}"
             }
 
-    def request_trading_strategy(self, market_data: Dict[str, Any]) -> Tuple[str, Dict[str, Any]]:
+    def request_trading_strategy(self, market_data: Dict[str, Any], onchain_data: Dict[str, Any]) -> Tuple[
+        str, Dict[str, Any]]:
         """
         GPT에 트레이딩 전략 요청
 
         Args:
             market_data (Dict[str, Any]): 시장 데이터
+            onchain_data (Dict[str, Any]): 온체인 데이터
 
         Returns:
             Tuple[str, Dict[str, Any]]: (프롬프트, GPT의 파싱된 전략 응답)
         """
         try:
-            # 프롬프트 생성
-            prompt = self.generate_trading_prompt(market_data)
+            # 프롬프트 생성 (온체인 데이터 포함)
+            prompt = self.generate_trading_prompt(market_data, onchain_data)
 
             # GPT 호출
             gpt_response = self.gpt_interface.call_gpt_with_prompt(prompt)
@@ -290,6 +323,7 @@ class TradingPipeline:
         전체 트레이딩 파이프라인 실행
         """
         market_data = None
+        onchain_data = None
         strategy = None
         trade_result = None
         reflection = None
@@ -310,8 +344,12 @@ class TradingPipeline:
                 print(f"유효한 가격 데이터를 수집하지 못했습니다. 가격: {price} 파이프라인 중단.")
                 return
 
+            # 2.1 온체인 데이터 수집
+            onchain_data = self.collect_onchain_data()
+            print(f"온체인 데이터 수집 완료: {len(onchain_data.get('indicators', {}))}개 지표")
+
             # 3. GPT에 전략 요청 (프롬프트와 전략 응답 받기)
-            prompt, strategy = self.request_trading_strategy(market_data)
+            prompt, strategy = self.request_trading_strategy(market_data, onchain_data)
 
             # 4. 전략 실행
             trade_result = self.execute_trade(strategy, float(price))
@@ -322,6 +360,7 @@ class TradingPipeline:
             # 6. 로그 저장 (프롬프트 포함)
             # 모든 데이터를 JSON으로 직렬화 가능한 상태로 변환
             market_data_clean = self._sanitize_data(market_data)
+            onchain_data_clean = self._sanitize_data(onchain_data)
             strategy_clean = self._sanitize_data(strategy)
             trade_result_clean = self._sanitize_data(trade_result)
             reflection_clean = self._sanitize_data(reflection)
@@ -329,6 +368,7 @@ class TradingPipeline:
             # 직접 변환된 데이터로 JSON 문자열 생성 테스트 (오류 발생시 조기 감지)
             try:
                 json.dumps(market_data_clean)
+                json.dumps(onchain_data_clean)
                 json.dumps(strategy_clean)
                 json.dumps(trade_result_clean)
                 json.dumps(reflection_clean)
@@ -337,8 +377,14 @@ class TradingPipeline:
                 traceback.print_exc()
                 raise
 
+            # 통합 데이터 준비 (온체인 데이터 포함)
+            combined_data = {
+                "market_data": market_data_clean,
+                "onchain_data": onchain_data_clean
+            }
+
             LogSaver.save_log_with_result(
-                market_data_clean,
+                combined_data,
                 prompt,  # 프롬프트 전달
                 strategy_clean,
                 trade_result_clean,
@@ -359,8 +405,13 @@ class TradingPipeline:
 
                     # 간소화된 데이터로 로그 저장
                     simplified_data = {
-                        "price": float(market_data.get("price", 0)) if isinstance(market_data, dict) else 0,
-                        "error": "데이터 정리 오류"
+                        "market_data": {
+                            "price": float(market_data.get("price", 0)) if isinstance(market_data, dict) else 0,
+                            "error": "데이터 정리 오류"
+                        },
+                        "onchain_data": {
+                            "error": "온체인 데이터 처리 오류"
+                        }
                     }
 
                     simplified_result = {"error": str(e), "action": "ERROR"}

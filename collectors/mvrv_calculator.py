@@ -30,7 +30,8 @@ class MVRVZScoreCalculator:
 
         # 여러 윈도우 기간 설정
         self.short_window = 365  # 1년
-        self.long_window = 1460  # 4년 (365*4)
+        self.medium_window = 1460  # 4년 (365*4)
+        self.long_window = 2920  # 8년 (365*8) - 4년에서 8년으로 변경
 
         # 초기화 시 CSV 파일 확인 및 로드
         self.df = self._load_csv_data()
@@ -67,13 +68,15 @@ class MVRVZScoreCalculator:
             else:
                 print(f"CSV 파일 없음: {self.csv_file}. 새 데이터를 다운로드합니다.")
                 return pd.DataFrame(columns=["date", "market_cap", "realized_cap", "mvrv_ratio",
-                                             "market_cap_std_1y", "market_cap_std_4y",
-                                             "mvrv_z_score_1y", "mvrv_z_score_4y", "mvrv_z_score_historical"])
+                                             "market_cap_std_1y", "market_cap_std_4y", "market_cap_std_8y",
+                                             "mvrv_z_score_1y", "mvrv_z_score_4y", "mvrv_z_score_8y",
+                                             "mvrv_z_score_historical"])
         except Exception as e:
             print(f"CSV 파일 로드 중 오류 발생: {e}")
             return pd.DataFrame(columns=["date", "market_cap", "realized_cap", "mvrv_ratio",
-                                         "market_cap_std_1y", "market_cap_std_4y",
-                                         "mvrv_z_score_1y", "mvrv_z_score_4y", "mvrv_z_score_historical"])
+                                         "market_cap_std_1y", "market_cap_std_4y", "market_cap_std_8y",
+                                         "mvrv_z_score_1y", "mvrv_z_score_4y", "mvrv_z_score_8y",
+                                         "mvrv_z_score_historical"])
 
     def _get_latest_date_in_csv(self) -> Optional[datetime]:
         """
@@ -130,7 +133,7 @@ class MVRVZScoreCalculator:
             # 모든 날짜를 타임존이 없는 형태로 통일
             start_date = start_date.replace(tzinfo=None)
         else:
-            # 데이터가 없다면 기본 기간(4년) 동안의 데이터 요청
+            # 데이터가 없다면 기본 기간(8년) 동안의 데이터 요청
             start_date = datetime.now() - timedelta(days=self.long_window)
             # 타임존 정보 제거
             start_date = start_date.replace(tzinfo=None)
@@ -265,10 +268,14 @@ class MVRVZScoreCalculator:
         temp_df["mvrv_z_score_1y"] = temp_df["market_realized_delta"] / temp_df["market_cap_std_1y"]
 
         # 2. 4년 이동 윈도우 기반 계산
-        temp_df["market_cap_std_4y"] = temp_df["market_cap"].rolling(window=self.long_window).std()
+        temp_df["market_cap_std_4y"] = temp_df["market_cap"].rolling(window=self.medium_window).std()
         temp_df["mvrv_z_score_4y"] = temp_df["market_realized_delta"] / temp_df["market_cap_std_4y"]
 
-        # 3. 전체 기간 기반 계산
+        # 3. 8년 이동 윈도우 기반 계산 (추가)
+        temp_df["market_cap_std_8y"] = temp_df["market_cap"].rolling(window=self.long_window).std()
+        temp_df["mvrv_z_score_8y"] = temp_df["market_realized_delta"] / temp_df["market_cap_std_8y"]
+
+        # 4. 전체 기간 기반 계산
         entire_period_market_cap_std = temp_df["market_cap"].std()
         temp_df["mvrv_z_score_historical"] = temp_df["market_realized_delta"] / entire_period_market_cap_std
 
@@ -331,11 +338,13 @@ class MVRVZScoreCalculator:
                     "z_scores": {
                         "1y": None,
                         "4y": None,
+                        "8y": None,
                         "historical": None
                     },
                     "signals": {
                         "1y": "DATA_ERROR",
                         "4y": "DATA_ERROR",
+                        "8y": "DATA_ERROR",
                         "historical": "DATA_ERROR"
                     },
                     "error": "데이터를 가져오지 못했습니다."
@@ -344,7 +353,7 @@ class MVRVZScoreCalculator:
             # 최신 데이터가 필요한 모든 열을 가지고 있는지 확인
             latest = self.df.iloc[0]
             required_columns = ["market_cap", "realized_cap", "mvrv_ratio",
-                                "mvrv_z_score_1y", "mvrv_z_score_4y", "mvrv_z_score_historical"]
+                                "mvrv_z_score_1y", "mvrv_z_score_4y", "mvrv_z_score_8y", "mvrv_z_score_historical"]
 
             missing_columns = [col for col in required_columns if col not in latest or pd.isna(latest[col])]
             if missing_columns:
@@ -357,6 +366,7 @@ class MVRVZScoreCalculator:
             # Z-Score 해석
             signal_1y = self._interpret_z_score(latest["mvrv_z_score_1y"] if "mvrv_z_score_1y" in latest else None)
             signal_4y = self._interpret_z_score(latest["mvrv_z_score_4y"] if "mvrv_z_score_4y" in latest else None)
+            signal_8y = self._interpret_z_score(latest["mvrv_z_score_8y"] if "mvrv_z_score_8y" in latest else None)
             signal_historical = self._interpret_z_score(
                 latest["mvrv_z_score_historical"] if "mvrv_z_score_historical" in latest else None)
 
@@ -369,11 +379,13 @@ class MVRVZScoreCalculator:
                 "z_scores": {
                     "1y": latest["mvrv_z_score_1y"] if "mvrv_z_score_1y" in latest else None,
                     "4y": latest["mvrv_z_score_4y"] if "mvrv_z_score_4y" in latest else None,
+                    "8y": latest["mvrv_z_score_8y"] if "mvrv_z_score_8y" in latest else None,
                     "historical": latest["mvrv_z_score_historical"] if "mvrv_z_score_historical" in latest else None
                 },
                 "signals": {
                     "1y": signal_1y,
                     "4y": signal_4y,
+                    "8y": signal_8y,
                     "historical": signal_historical
                 }
             }
@@ -388,11 +400,13 @@ class MVRVZScoreCalculator:
                 "z_scores": {
                     "1y": None,
                     "4y": None,
+                    "8y": None,
                     "historical": None
                 },
                 "signals": {
                     "1y": "ERROR",
                     "4y": "ERROR",
+                    "8y": "ERROR",
                     "historical": "ERROR"
                 },
                 "error": str(e)
@@ -460,6 +474,11 @@ if __name__ == "__main__":
         print(f"4년 기준: {result['z_scores']['4y']:.2f} ({result['signals']['4y']})")
     else:
         print("4년 기준: 데이터 없음")
+
+    if result['z_scores']['8y'] is not None:
+        print(f"8년 기준: {result['z_scores']['8y']:.2f} ({result['signals']['8y']})")
+    else:
+        print("8년 기준: 데이터 없음")
 
     if result['z_scores']['historical'] is not None:
         print(f"역사적 기준: {result['z_scores']['historical']:.2f} ({result['signals']['historical']})")

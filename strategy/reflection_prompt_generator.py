@@ -9,7 +9,8 @@ class ReflectionPromptGenerator:
             gpt_strategy: Dict[str, Any],
             entry_price: float = 0,
             exit_price: float = 0,
-            profit_percentage: float = 0
+            profit_percentage: float = 0,
+            market_cycle_info: str = None
     ) -> str:
         """
         Generate a prompt requesting GPT to reflect on the trading strategy.
@@ -19,6 +20,7 @@ class ReflectionPromptGenerator:
             entry_price (float): Entry price
             exit_price (float): Exit price
             profit_percentage (float): Profit percentage
+            market_cycle_info (str): Additional market cycle information from onchain data
 
         Returns:
             str: Reflection prompt
@@ -32,6 +34,14 @@ class ReflectionPromptGenerator:
             "take_profit": gpt_strategy.get("take_profit", 0),
         }
 
+        # Add market cycle info if available
+        market_cycle_section = ""
+        if market_cycle_info:
+            market_cycle_section = f"""
+    Market Cycle Information:
+    {market_cycle_info}
+    """
+
         prompt_template = f"""
     Please conduct an in-depth reflection on the recently executed trading strategy. This reflection is important for future strategy improvements.
 
@@ -43,13 +53,15 @@ class ReflectionPromptGenerator:
     - Exit Price: {exit_price}
     - Profit/Loss: {profit_percentage:.2f}%
     - Trade Type: {"Long" if gpt_strategy.get("action") == "BUY" else "Short" if gpt_strategy.get("action") == "SELL" else "Hold"}
+    {market_cycle_section}
 
     Analysis Perspectives:
     1. Detailed analysis of factors contributing to the strategy's success/failure
     2. Identification of differences between the outcome and the initial strategy
     3. Suggestions for improvements in similar market conditions in the future
     4. Recommendations for improvements in risk management
-    5. Respond in JSON format (follow the structure below)
+    5. Evaluation of market cycle positioning and onchain data interpretation (if available)
+    6. Respond in JSON format (follow the structure below)
 
     Response JSON Structure:
     {{
@@ -58,6 +70,7 @@ class ReflectionPromptGenerator:
         "improvement_recommendations": ["Recommendation 1", "Recommendation 2", "Recommendation 3"],
         "confidence_in_original_strategy": 0-100,
         "risk_management_score": 0-100,
+        "market_cycle_evaluation": "Your assessment of market cycle position and its impact on the strategy",
         "future_considerations": "Points to consider when executing similar strategies in the future"
     }}
 

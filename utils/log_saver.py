@@ -35,7 +35,7 @@ class LogSaver:
         각 트레이딩 판단의 전체 로그를 저장합니다.
 
         Args:
-            input_data (Dict): 초기 입력 데이터
+            input_data (Dict): 초기 입력 데이터 (시장 데이터와 온체인 데이터 포함)
             prompt (str): GPT에 전달한 프롬프트
             gpt_response (Dict): GPT의 응답
             trade_result (Dict): 트레이드 결과
@@ -68,8 +68,23 @@ class LogSaver:
         txt_filename = os.path.join(log_dir, 'trade_log.txt')
         with open(txt_filename, 'w', encoding='utf-8') as f:
             f.write(f"타임스탬프: {timestamp}\n\n")
-            f.write("입력 데이터:\n")
-            f.write(json.dumps(input_data, ensure_ascii=False, indent=2, cls=CustomJSONEncoder) + "\n\n")
+
+            # 시장 데이터와 온체인 데이터 분리 출력
+            f.write("시장 데이터:\n")
+            if 'market_data' in input_data:
+                f.write(
+                    json.dumps(input_data['market_data'], ensure_ascii=False, indent=2, cls=CustomJSONEncoder) + "\n\n")
+            else:
+                f.write(json.dumps(input_data, ensure_ascii=False, indent=2, cls=CustomJSONEncoder) + "\n\n")
+
+            # 온체인 데이터 출력
+            f.write("온체인 데이터:\n")
+            if 'onchain_data' in input_data:
+                f.write(json.dumps(input_data['onchain_data'], ensure_ascii=False, indent=2,
+                                   cls=CustomJSONEncoder) + "\n\n")
+            else:
+                f.write("온체인 데이터 없음\n\n")
+
             f.write("GPT 프롬프트:\n")
             f.write(prompt + "\n\n")
             f.write("GPT 응답:\n")
@@ -84,7 +99,10 @@ class LogSaver:
 
 # 사용 예시
 if __name__ == "__main__":
-    sample_input = {"price": 50000, "rsi": 62}
+    sample_input = {
+        "market_data": {"price": 50000, "rsi": 62},
+        "onchain_data": {"mvrv_ratio": 2.5, "signal": "OVERVALUED"}
+    }
     sample_prompt = "트레이딩 전략 제안"
     sample_gpt_response = {"action": "BUY", "confidence": 75}
     sample_trade_result = {"entry_price": 50100, "exit_price": 51200}
