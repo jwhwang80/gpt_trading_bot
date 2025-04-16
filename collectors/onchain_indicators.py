@@ -1,6 +1,7 @@
 import pandas as pd
 import requests
 import json
+import os
 from typing import Dict, Any, List, Optional
 import time
 from datetime import datetime
@@ -40,7 +41,7 @@ class OnchainIndicatorBase(BaseIndicator):
     bitcoin-data.com 기반 온체인 지표의 기본 클래스
     """
 
-    def __init__(self, name: str, description: str, endpoint: str):
+    def __init__(self, name: str, description: str, endpoint: str, csv_dir: str = "output/onchain_data"):
         """
         온체인 지표 초기화
 
@@ -48,25 +49,111 @@ class OnchainIndicatorBase(BaseIndicator):
             name (str): 지표 이름
             description (str): 지표 설명
             endpoint (str): API 엔드포인트
+            csv_dir (str): CSV 파일 저장 디렉토리
         """
         super().__init__(name=name, description=description)
         self.endpoint = endpoint
         self.column_name = name
         self.latest_data = None
+        self.csv_dir = csv_dir
+        self.csv_path = os.path.join(csv_dir, f"{name.lower()}_data.csv")
+
+        # CSV 디렉토리가 없으면 생성
+        os.makedirs(csv_dir, exist_ok=True)
 
     def fetch_latest_data(self) -> Dict[str, Any]:
         """
-        API에서 최신 지표 데이터를 가져옵니다.
+        CSV 파일을 먼저 확인하고, 필요하면 API에서 최신 지표 데이터를 가져옵니다.
 
         Returns:
             Dict[str, Any]: 최신 지표 데이터
         """
-        self.latest_data = BitcoinDataAPI.get_indicator(self.endpoint)
-        return self.latest_data
+        try:
+            # 오늘 날짜 확인
+            today = datetime.now().date()
+
+            # CSV 파일 존재 여부 확인
+            if os.path.exists(self.csv_path):
+                # CSV 파일 로드
+                df = pd.read_csv(self.csv_path)
+
+                # 날짜 열 확인 및 변환
+                if 'date' in df.columns:
+                    df['date'] = pd.to_datetime(df['date'])
+
+                    # 내림차순 정렬 (최신 데이터가 맨 위)
+                    df = df.sort_values('date', ascending=False)
+
+                    # 최신 데이터의 날짜 확인
+                    if not df.empty:
+                        latest_date = df['date'].iloc[0].date()
+
+                        # 오늘 데이터가 이미 있으면 API 호출 생략
+                        if latest_date == today:
+                            print(f"{self.name}: 오늘 데이터가 이미 CSV에 있습니다. API 호출 생략.")
+                            self.latest_data = df.iloc[0].to_dict()
+                            return self.latest_data
+
+            # CSV에 오늘 데이터가 없거나 파일이 없을 경우 API 호출
+            print(f"{self.name}: API에서 최신 데이터 요청 중...")
+            self.latest_data = BitcoinDataAPI.get_indicator(self.endpoint)
+
+            # API 응답 저장
+            if "error" not in self.latest_data:
+                # 새 데이터 준비
+                new_data = {
+                    "date": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                    self.column_name: self._extract_indicator_value(self.latest_data)
+                }
+
+                # API 응답의 다른 필드도 포함
+                for key, value in self.latest_data.items():
+                    if key not in new_data and key != "time":
+                        new_data[key] = value
+
+                # 새 데이터프레임 생성
+                new_df = pd.DataFrame([new_data])
+
+                # CSV 파일이 존재하면 기존 데이터와 병합
+                if os.path.exists(self.csv_path):
+                    df = pd.read_csv(self.csv_path)
+
+                    # 날짜 열 변환
+                    if 'date' in df.columns:
+                        df['date'] = pd.to_datetime(df['date'])
+
+                    # 중복 제거 (같은 날짜가 있으면 새 데이터 우선)
+                    if 'date' in df.columns:
+                        df['date_only'] = df['date'].dt.date
+                        df = df[df['date_only'] != today]
+                        df = df.drop('date_only', axis=1)
+
+                    # 새 데이터를 위에 추가
+                    df = pd.concat([new_df, df], ignore_index=True)
+                else:
+                    df = new_df
+
+                # 날짜 열 변환
+                if 'date' in df.columns:
+                    df['date'] = pd.to_datetime(df['date'])
+
+                # 날짜 내림차순 정렬 (최신 데이터가 맨 위)
+                df = df.sort_values('date', ascending=False)
+
+                # CSV 파일로 저장
+                df.to_csv(self.csv_path, index=False)
+                print(f"{self.name}: 데이터를 {self.csv_path}에 저장했습니다.")
+
+            return self.latest_data
+
+        except Exception as e:
+            print(f"{self.name} 데이터 가져오기 중 오류: {e}")
+            self.latest_data = {"error": str(e)}
+            return self.latest_data
 
     def calculate(self, df: pd.DataFrame) -> pd.DataFrame:
         """
-        API에서 최신 데이터를 가져와 데이터프레임에 추가합니다.
+        CSV 파일에서 데이터를 로드하거나 API에서 최신 데이터를 가져와 데이터프레임에 추가합니다.
 
         Args:
             df (pd.DataFrame): 원본 데이터프레임
@@ -76,7 +163,7 @@ class OnchainIndicatorBase(BaseIndicator):
         """
         df_copy = df.copy()
 
-        # API에서 최신 데이터 가져오기
+        # 최신 데이터 가져오기 (CSV 파일 우선, 필요시 API 호출)
         data = self.fetch_latest_data()
 
         # 모든 행에 동일한 값 추가
@@ -152,6 +239,28 @@ class OnchainIndicatorBase(BaseIndicator):
         """
         return [self.column_name]
 
+    def load_historical_data(self) -> pd.DataFrame:
+        """
+        CSV 파일에서 역사적 데이터를 로드합니다.
+
+        Returns:
+            pd.DataFrame: 역사적 데이터가 포함된 데이터프레임
+        """
+        if os.path.exists(self.csv_path):
+            df = pd.read_csv(self.csv_path)
+
+            # 날짜 열 변환
+            if 'date' in df.columns:
+                df['date'] = pd.to_datetime(df['date'])
+
+            # 날짜 내림차순 정렬 (최신 데이터가 맨 위)
+            df = df.sort_values('date', ascending=False)
+
+            return df
+        else:
+            # CSV 파일이 없으면 빈 데이터프레임 반환
+            return pd.DataFrame(columns=['date', self.column_name])
+
 
 class SOPRIndicator(OnchainIndicatorBase):
     """
@@ -208,7 +317,6 @@ class SOPRIndicator(OnchainIndicatorBase):
             'signal': signal,
             'description': description
         }
-
 
 class LTHSOPRIndicator(OnchainIndicatorBase):
     """
@@ -538,7 +646,6 @@ class NUPLIndicator(OnchainIndicatorBase):
             'description': description
         }
 
-
 class ETFFlowIndicator(OnchainIndicatorBase):
     """
     ETF Flow 지표
@@ -589,7 +696,6 @@ class ETFFlowIndicator(OnchainIndicatorBase):
             'signal': signal,
             'description': description
         }
-
 
 class RealizedPriceIndicator(OnchainIndicatorBase):
     """
@@ -654,7 +760,6 @@ class RealizedPriceIndicator(OnchainIndicatorBase):
             'description': description
         }
 
-
 class STHSOPRIndicator(OnchainIndicatorBase):
     """
     단기 보유자 SOPR (Short-Term Holder SOPR) 지표
@@ -713,7 +818,6 @@ class STHSOPRIndicator(OnchainIndicatorBase):
             'signal': signal + signal_suffix if signal_suffix else signal,
             'description': description
         }
-
 
 class STHMVRVIndicator(OnchainIndicatorBase):
     """
