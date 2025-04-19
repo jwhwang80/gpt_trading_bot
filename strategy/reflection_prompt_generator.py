@@ -55,13 +55,20 @@ class ReflectionPromptGenerator:
     - Trade Type: {"Long" if gpt_strategy.get("action") == "BUY" else "Short" if gpt_strategy.get("action") == "SELL" else "Hold"}
     {market_cycle_section}
 
+    Long-Term Perspective on Onchain Analysis:
+    - Remember that onchain indicators (like MVRV, SOPR, NUPL) primarily provide insights into long-term market cycles rather than short-term price movements.
+    - Onchain data should be used to establish the broader market context within which technical trading strategies operate.
+    - Consider how well the strategy aligned with the market cycle position suggested by onchain metrics.
+    - The value of onchain data is in identifying major accumulation or distribution phases, not precise entry/exit timing.
+
     Analysis Perspectives:
     1. Detailed analysis of factors contributing to the strategy's success/failure
     2. Identification of differences between the outcome and the initial strategy
-    3. Suggestions for improvements in similar market conditions in the future
-    4. Recommendations for improvements in risk management
-    5. Evaluation of market cycle positioning and onchain data interpretation (if available)
-    6. Respond in JSON format (follow the structure below)
+    3. Evaluation of how well the strategy integrated both technical indicators (short-term) and onchain data (long-term)
+    4. Suggestions for improvements in similar market conditions in the future
+    5. Recommendations for improvements in risk management
+    6. Assessment of whether the trade timing aligned with the long-term market cycle suggested by onchain metrics
+    7. Respond in JSON format (follow the structure below)
 
     Response JSON Structure:
     {{
@@ -71,6 +78,7 @@ class ReflectionPromptGenerator:
         "confidence_in_original_strategy": 0-100,
         "risk_management_score": 0-100,
         "market_cycle_evaluation": "Your assessment of market cycle position and its impact on the strategy",
+        "onchain_alignment": "How well the trade aligned with the long-term outlook suggested by onchain data",
         "future_considerations": "Points to consider when executing similar strategies in the future"
     }}
 

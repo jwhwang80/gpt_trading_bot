@@ -58,7 +58,8 @@ class PromptGenerator:
 
         # Add onchain data if available
         if onchain_data and 'indicators' in onchain_data:
-            prompt += "\nOnchain Indicators Analysis:\n"
+            prompt += "\nOnchain Indicators Analysis (Long-Term Market Perspective):\n"
+            prompt += "Onchain indicators are crucial for understanding long-term market trends and macro cycle positioning. These metrics are more valuable for identifying market cycles and long-term investment strategies rather than short-term price fluctuations.\n\n"
 
             for indicator_name, indicator_data in onchain_data['indicators'].items():
                 if isinstance(indicator_data, dict):
@@ -111,7 +112,15 @@ class PromptGenerator:
     - Consider both technical indicators (4H and 1D timeframes) and onchain data in your analysis.
     - Evaluate if short-term (4H), long-term (1D) trends, and onchain fundamentals align.
     - Consider market cycle positioning based on onchain indicators like MVRV Z-Score.
+    - Use onchain metrics as a long-term strategic guide, not for short-term timing.
     - Explain your strategy when different timeframes or data sources show conflicting signals.
+
+    Long-Term Perspective on Onchain Data:
+    - Onchain indicators reflect blockchain's fundamental health and adoption.
+    - These metrics are most valuable for identifying major market cycle phases (accumulation, expansion, euphoria, capitulation).
+    - Prioritize onchain data for strategic positioning rather than day-to-day trading decisions.
+    - Align short-term technical trades with the broader market cycle identified by onchain metrics.
+    - Consider divergence between onchain fundamentals and price as potential market inefficiency.
 
     Requirements:
     1. Respond in JSON format (e.g., {"action": "BUY/SELL/HOLD", "confidence": 0-100, "reasoning": "explanation", "stop_loss": price, "take_profit": price})
@@ -122,6 +131,7 @@ class PromptGenerator:
     6. Position size is proportional to confidence and will not exceed 5%.
     7. Consider the market conditions, technical indicators, and onchain data comprehensively.
     8. Include your interpretation of the market cycle position in your reasoning.
+    9. Explain how onchain metrics influence your long-term outlook while technical indicators guide short-term execution.
 
     Please respond in JSON format only.
     """
@@ -177,13 +187,13 @@ class PromptGenerator:
     @staticmethod
     def load_historical_trades(max_trades: int = 5) -> List[Dict[str, Any]]:
         """
-        과거 거래 내역을 로드합니다.
+        Load historical trade records.
 
         Args:
-            max_trades (int): 로드할 최대 거래 수
+            max_trades (int): Maximum number of trades to load
 
         Returns:
-            List[Dict[str, Any]]: 과거 거래 목록
+            List[Dict[str, Any]]: List of historical trades
         """
         try:
             if not os.path.exists('trades.xlsx'):
@@ -191,37 +201,37 @@ class PromptGenerator:
 
             df = pd.read_excel('trades.xlsx')
 
-            # 거래 타입별로 필터링
+            # Filter by trade type
             entry_trades = df[df['type'] == 'ENTRY'].sort_values('timestamp', ascending=False).head(max_trades)
             exit_trades = df[df['type'] == 'EXIT']
 
             historical_trades = []
 
             for _, entry in entry_trades.iterrows():
-                # 해당 진입에 대한 청산 찾기
+                # Find matching exit for this entry
                 matching_exit = exit_trades[
                     (exit_trades['round'] == entry['round']) &
                     (exit_trades['strategy_id'] == entry['strategy_id'])
                     ]
 
-                trade_result = "진행 중"
+                trade_result = "In progress"
                 profit_loss = 0
 
                 if not matching_exit.empty:
                     exit_price = matching_exit.iloc[0]['exit_price']
-                    if entry['symbol'].endswith('USDT'):  # USDT 페어인 경우
+                    if entry['symbol'].endswith('USDT'):  # USDT pair
                         if entry['action'] == 'BUY':
                             profit_loss = (exit_price - entry['entry_price']) / entry['entry_price'] * 100
-                        else:  # SELL인 경우
+                        else:  # SELL
                             profit_loss = (entry['entry_price'] - exit_price) / entry['entry_price'] * 100
 
-                    trade_result = f"{'이익' if profit_loss > 0 else '손실'} ({profit_loss:.2f}%)"
+                    trade_result = f"{'Profit' if profit_loss > 0 else 'Loss'} ({profit_loss:.2f}%)"
 
                 historical_trades.append({
                     "action": entry['action'] if 'action' in entry else 'BUY',
                     "entry_price": entry['entry_price'],
                     "timestamp": entry['timestamp'],
-                    "confidence": 0,  # 이 정보는 Excel에 없을 수 있음
+                    "confidence": 0,  # This information might not be in Excel
                     "symbol": entry['symbol'],
                     "strategy_id": entry['strategy_id'],
                     "result": trade_result,
@@ -231,5 +241,5 @@ class PromptGenerator:
             return historical_trades
 
         except Exception as e:
-            print(f"과거 거래 내역을 로드하는 중 오류 발생: {e}")
+            print(f"Error loading historical trades: {e}")
             return []
